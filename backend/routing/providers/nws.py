@@ -20,6 +20,7 @@ BASE_URL = "https://api.weather.gov"
 POINTS_TTL_S = 7 * 24 * 3600
 
 MPH_PER = {"wmoUnit:km_h-1": 0.621371, "wmoUnit:m_s-1": 2.236936}
+DEGREES = {"wmoUnit:degree_(angle)": 1.0}
 INCHES_PER = {"wmoUnit:mm": 1 / 25.4, "wmoUnit:cm": 1 / 2.54, "wmoUnit:m": 39.3701}
 # Snow-to-liquid ratio used to remove snow's water content from total precipitation.
 SNOW_TO_LIQUID = 10
@@ -53,6 +54,7 @@ def fetch_hourly(point: LonLat, start_ts: int, end_ts: int) -> HourlyWeather:
     hours = range(start, end_ts + 1, 3600)
     wind = _hourly_values(props.get("windSpeed"), MPH_PER, per_hour=False)
     gust = _hourly_values(props.get("windGust"), MPH_PER, per_hour=False)
+    wind_dir = _hourly_values(props.get("windDirection"), DEGREES, per_hour=False)
     precip = _hourly_values(props.get("quantitativePrecipitation"), INCHES_PER, per_hour=True)
     snow = _hourly_values(props.get("snowfallAmount"), INCHES_PER, per_hour=True)
 
@@ -62,6 +64,7 @@ def fetch_hourly(point: LonLat, start_ts: int, end_ts: int) -> HourlyWeather:
             rain_in_hr=_rain_rate(precip.get(ts), snow.get(ts)),
             snow_in_hr=snow.get(ts),
             gust_mph=gust.get(ts),
+            wind_dir_deg=wind_dir.get(ts),
             source=PROVIDER,
         )
         for ts in hours

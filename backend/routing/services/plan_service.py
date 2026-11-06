@@ -120,7 +120,7 @@ def create_plan(trip: TripRequest, *, now: float | None = None) -> Plan:
                 display_geometry=simplify(candidate.geometry),
                 departure_ts=departure,
                 checkpoints=assessed,
-                summary=summarize((c.position.segment_mi, c.assessment.final) for c in assessed),
+                summary=summarize((c.position.covers_mi, c.assessment.final) for c in assessed),
                 rank=0,
             )
         )

@@ -1,6 +1,12 @@
-import { Eye, EyeOff, Loader2, Pause, Play } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Navigation2, Pause, Play } from 'lucide-react';
 import { memo, useCallback, useEffect, useId, useMemo } from 'react';
 import { formatDateTime, formatTime } from '../../lib/format';
+import {
+  describeCauses,
+  HEATMAP_VIEWS,
+  type HeatmapView,
+  type HourSummary,
+} from '../../lib/heatmap';
 import { RISK_COLOR, RISK_LABEL } from '../../lib/risk';
 import type { RiskOrUnknown } from '../../types';
 
@@ -9,8 +15,13 @@ interface ForecastSliderProps {
   hours: number; // slider positions (49 = 0..48 h)
   hour: number;
   onHourChange: (hour: number) => void;
-  /** Worst risk score anywhere in the corridor for each hour (null = unknown). */
-  worstByHour: (number | null)[] | null;
+  /** Worst level in the corridor and its causes, per hour, for the current view. */
+  summaries: HourSummary[] | null;
+  view: HeatmapView;
+  onViewChange: (view: HeatmapView) => void;
+  arrows: boolean;
+  onArrowsChange: (arrows: boolean) => void;
+  loadLb: number;
   routeName: string | null;
   tripStart: number | null; // selected route departure (Unix seconds)
   tripEnd: number | null; // selected route arrival
@@ -34,7 +45,12 @@ export function ForecastSlider({
   hours,
   hour,
   onHourChange,
-  worstByHour,
+  summaries,
+  view,
+  onViewChange,
+  arrows,
+  onArrowsChange,
+  loadLb,
   routeName,
   tripStart,
   tripEnd,
@@ -71,6 +87,9 @@ export function ForecastSlider({
     return () => window.clearTimeout(timer);
   }, [playing, hour, max, onHourChange, onPlayingChange]);
 
+  const tripStartPct = tripStart !== null ? pct(tripStart) : 0;
+  const tripEndPct = tripEnd !== null ? pct(tripEnd) : 0;
+
   return (
     <div className="rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-sm backdrop-blur-sm">
       <div className="flex items-center gap-3">
@@ -95,16 +114,7 @@ export function ForecastSlider({
           <p aria-live="polite" className="truncate text-xs text-ink-2">
             {status === 'loading' && 'Loading the 48-hour forecast…'}
             {status === 'error' && <span className="text-danger">Weather layer unavailable</span>}
-            {ready && (
-              <StatusText
-                worst={worstByHour?.[hour]}
-                routeName={routeName}
-                hourStart={hourStart}
-                tripStart={tripStart}
-                tripEnd={tripEnd}
-                truckMile={truckMile}
-              />
-            )}
+            {ready && <CorridorStatus summary={summaries?.[hour]} view={view} loadLb={loadLb} />}
           </p>
         </div>
 
@@ -124,16 +134,59 @@ export function ForecastSlider({
         </button>
       </div>
 
+      {/* What to show: the overall risk or one condition, and the wind arrows. */}
+      <div className="mt-3 flex items-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label="Heatmap shows"
+          className="flex rounded-lg bg-surface-2 p-0.5 ring-1 ring-line"
+        >
+          {HEATMAP_VIEWS.map((option) => {
+            const selected = option.value === view;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={!ready}
+                onClick={() => onViewChange(option.value)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  selected
+                    ? 'bg-surface text-ink shadow-sm ring-1 ring-line'
+                    : 'text-ink-2 hover:text-ink'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => onArrowsChange(!arrows)}
+          aria-pressed={arrows}
+          disabled={!ready}
+          className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium ring-1 transition-colors disabled:opacity-50 ${
+            arrows ? 'bg-ink text-white ring-ink' : 'text-ink-2 ring-line hover:text-ink'
+          }`}
+        >
+          <Navigation2 aria-hidden className="size-3.5 rotate-45" />
+          Wind arrows
+        </button>
+      </div>
+
       {/*
         Every row below sits inside an 8px inset (half the thumb), so hour h lines up with the
         thumb's centre: bars, the driving window and tick labels share one coordinate system.
       */}
       <div className="mt-3">
-        {/* Risk timeline: the worst level in the corridor, hour by hour. */}
         <RiskTimeline
           startHour={startHour}
           hours={hours}
-          worstByHour={worstByHour}
+          summaries={summaries}
+          view={view}
+          loadLb={loadLb}
           current={hour}
           ready={ready}
           onSelect={selectHour}
@@ -150,10 +203,7 @@ export function ForecastSlider({
             step={1}
             value={hour}
             disabled={!ready}
-            onChange={(event) => {
-              onPlayingChange(false);
-              onHourChange(Number(event.target.value));
-            }}
+            onChange={(event) => selectHour(Number(event.target.value))}
             aria-valuetext={`${formatDateTime(hourStart)}, ${hour} hours from now`}
             className="forecast-range absolute inset-0 w-full"
           />
@@ -164,15 +214,19 @@ export function ForecastSlider({
           <div className="mt-1 h-4 px-2">
             <div className="relative h-full">
               <div
-                className="absolute top-0 flex h-full min-w-0 items-center"
-                style={{ left: `${pct(tripStart)}%`, width: `${pct(tripEnd) - pct(tripStart)}%` }}
+                className="absolute top-0 h-1 rounded-full bg-accent"
+                style={{ left: `${tripStartPct}%`, width: `${tripEndPct - tripStartPct}%` }}
                 title={`${routeName}: departs ${formatTime(tripStart)}, arrives ${formatTime(tripEnd)}`}
+              />
+              {/* Not clipped to the band: short trips would otherwise show "Ro…". */}
+              <span
+                className={`absolute top-1.5 text-[11px] font-medium whitespace-nowrap text-accent-hover ${
+                  tripStartPct > 60 ? '-translate-x-full' : ''
+                }`}
+                style={{ left: `${tripStartPct > 60 ? tripEndPct : tripStartPct}%` }}
               >
-                <div className="absolute inset-x-0 top-0 h-1 rounded-full bg-accent" />
-                <span className="mt-2 truncate text-[11px] font-medium text-accent-hover">
-                  {routeName} on the road
-                </span>
-              </div>
+                {routeName} on the road
+              </span>
             </div>
           </div>
         )}
@@ -191,40 +245,44 @@ export function ForecastSlider({
           </div>
         </div>
       </div>
+
+      {ready && (
+        <TruckStatus
+          routeName={routeName}
+          hourStart={hourStart}
+          tripStart={tripStart}
+          tripEnd={tripEnd}
+          truckMile={truckMile}
+        />
+      )}
     </div>
   );
 }
 
-function StatusText({
-  worst,
-  routeName,
-  hourStart,
-  tripStart,
-  tripEnd,
-  truckMile,
+const VIEW_NOUN: Record<HeatmapView, string> = {
+  overall: 'weather',
+  wind: 'wind',
+  rain: 'rain',
+  snow: 'snow',
+};
+
+function CorridorStatus({
+  summary,
+  view,
+  loadLb,
 }: {
-  worst: number | null | undefined;
-  routeName: string | null;
-  hourStart: number;
-  tripStart: number | null;
-  tripEnd: number | null;
-  truckMile: number | null;
+  summary: HourSummary | undefined;
+  view: HeatmapView;
+  loadLb: number;
 }) {
-  const level = levelOf(worst);
-  const corridor =
-    level === 'low'
-      ? 'Clear: no risk areas in the corridor'
-      : level === 'unknown'
-        ? 'Weather unknown in the corridor'
-        : `${RISK_LABEL[level]} weather in parts of the corridor`;
-
-  let truck: string | null = null;
-  if (routeName && tripStart !== null && tripEnd !== null) {
-    if (hourStart + 3600 <= tripStart) truck = `${routeName} departs ${formatTime(tripStart)}`;
-    else if (hourStart > tripEnd) truck = `${routeName} has arrived`;
-    else if (truckMile !== null) truck = `Truck near mile ${Math.round(truckMile)} on ${routeName}`;
-  }
-
+  const level = levelOf(summary?.score);
+  const noun = VIEW_NOUN[view];
+  let text: string;
+  if (level === 'unknown')
+    text = `${noun[0]!.toUpperCase()}${noun.slice(1)} unknown in the corridor`;
+  else if (level === 'low')
+    text = `Clear: no ${view === 'overall' ? 'risk areas' : `${noun} risk`} in the corridor`;
+  else text = `${RISK_LABEL[level]}: ${summary ? describeCauses(summary, loadLb) : noun}`;
   return (
     <>
       <span
@@ -232,29 +290,55 @@ function StatusText({
         className="mr-1.5 inline-block size-2 rounded-full align-middle"
         style={{ backgroundColor: RISK_COLOR[level] }}
       />
-      {corridor}
-      {truck && <span className="text-muted"> · {truck}</span>}
+      {text}
     </>
   );
+}
+
+function TruckStatus({
+  routeName,
+  hourStart,
+  tripStart,
+  tripEnd,
+  truckMile,
+}: {
+  routeName: string | null;
+  hourStart: number;
+  tripStart: number | null;
+  tripEnd: number | null;
+  truckMile: number | null;
+}) {
+  if (!routeName || tripStart === null || tripEnd === null) return null;
+  let text: string;
+  if (hourStart + 3600 <= tripStart) text = `${routeName} departs ${formatTime(tripStart)}`;
+  else if (hourStart > tripEnd) text = `${routeName} arrived at ${formatTime(tripEnd)}`;
+  else if (truckMile !== null) text = `Truck near mile ${Math.round(truckMile)} on ${routeName}`;
+  else return null;
+  return <p className="mt-1 text-[11px] text-muted">{text}</p>;
 }
 
 interface RiskTimelineProps {
   startHour: number;
   hours: number;
-  worstByHour: (number | null)[] | null;
+  summaries: HourSummary[] | null;
+  view: HeatmapView;
+  loadLb: number;
   current: number;
   ready: boolean;
   onSelect: (hour: number) => void;
 }
 
 /**
- * One bar per hour, coloured by the worst level in the corridor. Memoised, with tooltips
- * computed once per heatmap, so moving the slider re-renders only cheap style changes.
+ * One bar per hour, coloured by the worst level in the corridor for the current view, with the
+ * cause in its tooltip. Memoised with tooltips computed once per heatmap/view, so moving the
+ * slider re-renders only cheap style changes.
  */
 const RiskTimeline = memo(function RiskTimeline({
   startHour,
   hours,
-  worstByHour,
+  summaries,
+  view,
+  loadLb,
   current,
   ready,
   onSelect,
@@ -262,13 +346,17 @@ const RiskTimeline = memo(function RiskTimeline({
   const bars = useMemo(
     () =>
       Array.from({ length: hours }, (_, h) => {
-        const level = levelOf(worstByHour?.[h]);
+        const summary = summaries?.[h];
+        const level = levelOf(summary?.score);
+        const cause =
+          summary && summary.causes.length ? ` (${describeCauses(summary, loadLb)})` : '';
+        const scope = view === 'overall' ? 'worst in corridor' : `worst ${view} risk`;
         return {
           color: RISK_COLOR[level],
-          title: `${formatDateTime(startHour + h * 3600)} · worst in corridor: ${RISK_LABEL[level]}`,
+          title: `${formatDateTime(startHour + h * 3600)} · ${scope}: ${RISK_LABEL[level]}${cause}`,
         };
       }),
-    [startHour, hours, worstByHour],
+    [startHour, hours, summaries, view, loadLb],
   );
 
   return (

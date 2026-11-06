@@ -33,7 +33,13 @@ FIXTURES = ROOT / "tests" / "fixtures"
 CHICAGO = (-87.6298, 41.8781)
 MILWAUKEE = (-87.9065, 43.0389)
 DETOUR = (-88.30, 42.50)
-NWS_KEEP = ("windSpeed", "windGust", "quantitativePrecipitation", "snowfallAmount")
+NWS_KEEP = (
+    "windSpeed",
+    "windDirection",
+    "windGust",
+    "quantitativePrecipitation",
+    "snowfallAmount",
+)
 
 
 def record(name: str, call, trim=None) -> None:

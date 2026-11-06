@@ -166,6 +166,10 @@ assessment-trucks/
 - [x] **Status line**: the corridor's worst level at the chosen hour plus where the truck is ("Truck near mile 312 on Route A", "Route A has arrived"), announced to screen readers.
 - [x] **Driving window** drawn as its own labelled band ("Route A on the road") instead of a tint under the slider's fill, which hid it.
 
+- [x] **What causes the risk:** a view switch (Overall · Wind · Rain · Snow); the cause in the status line and timeline tooltips ("No Travel: rain up to 1.84 in/hr", "wind up to 48 mph with 42,000 lb load"); and a hover/tap card at any spot with the level from each condition, wind speed and direction, and whether the load rule applied. The backend returns per-condition levels and raw values from the same `assess()` call as the checkpoints.
+- [x] **Wind arrows:** Open-Meteo `wind_direction_10m` (NWS `windDirection` as fallback), drawn on a quarter of the grid points, pointing where the wind blows and sized by speed; they move with the slider.
+- [x] The heatmap stays visible to zoom 10 and fades out by 12, so short trips (which frame at ~zoom 9) still show it. The map follows the slider through `useDeferredValue`, so a fast drag skips in-between hours instead of lagging (normal drag 60 fps with no slow frames, fast drag 58–59 fps).
+
 **Decisions and measurements:**
 - **Why one layer per level.** The first version used one heatmap whose density represented score/4. In a corridor only ~5 grid points wide, the summed density never reaches its full value, so High areas rendered as Moderate: a safety display understating risk. Per-level layers fix that by construction.
 - **Kernel sizing.** The radius is 2× the grid spacing at every zoom (the backend returns `spacing_mi`), with intensity `1 / (0.2785 × 4)` so a solid area reaches density ~1. The heatmap fades out past zoom 8, where checkpoints are more informative.

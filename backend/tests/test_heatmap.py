@@ -100,3 +100,30 @@ def test_weather_outage_is_502_without_nws_fallback(plan, monkeypatch) -> None:
 
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "weather_unavailable"
+
+
+def test_heatmap_explains_each_area(plan) -> None:
+    hm = get_heatmap(plan["plan_id"]).json()
+    n, hours = len(hm["points"]), hm["hours"]
+    matrices = (
+        "wind_levels", "rain_levels", "snow_levels", "load_raised",
+        "wind_mph", "wind_dir_deg", "rain_in_hr", "snow_in_hr",
+    )  # fmt: skip
+    for key in matrices:
+        assert len(hm[key]) == n and all(len(row) == hours for row in hm[key]), key
+
+    # Stubbed weather: 50 mph wind over Route A's north half, calm elsewhere; load 35,000 lb.
+    windy = [i for i, row in enumerate(hm["scores"]) if row[0] == 4]
+    calm = [i for i, row in enumerate(hm["scores"]) if row[0] == 0]
+    assert windy and calm
+    w, c = windy[0], calm[0]
+
+    # The No Travel areas are caused by wind, raised by the load rule (45-54 mph + > 30,000 lb).
+    assert hm["wind_levels"][w][0] == 4
+    assert hm["load_raised"][w][0] == 1
+    assert hm["rain_levels"][w][0] == 0
+    assert hm["snow_levels"][w][0] == 0
+    assert hm["wind_mph"][w][0] == 50
+    # Calm areas: every condition Low, no load effect.
+    assert (hm["wind_levels"][c][0], hm["load_raised"][c][0]) == (0, 0)
+    assert hm["wind_mph"][c][0] == 5

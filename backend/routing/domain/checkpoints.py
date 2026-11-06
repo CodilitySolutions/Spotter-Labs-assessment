@@ -25,13 +25,15 @@ MIN_FINAL_SEGMENT_MI = 0.5
 class CheckpointPosition:
     """Where and when the truck is at one checkpoint.
 
-    ``segment_mi`` is the stretch of road this checkpoint represents: the distance from the
-    previous checkpoint (0 for the origin). The segments add up to the route length.
+    ``covers_mi`` is how much road this checkpoint's weather is applied to: every mile is
+    scored by its nearest checkpoint, so a checkpoint covers from halfway back to the previous
+    one to halfway on to the next. The origin covers the first half-interval (so the weather
+    at departure counts) and the destination the last. The coverages add up to the route length.
     """
 
     index: int
     mile: float
-    segment_mi: float
+    covers_mi: float
     coord: LonLat
     eta: int  # Unix seconds, UTC
 
@@ -84,18 +86,21 @@ def sample_checkpoints(
     cumdist = cumulative_distances(polyline)
     total = cumdist[-1]
 
+    miles = checkpoint_miles(total, interval_mi)
+    # Boundaries halfway between neighbouring checkpoints; the route's ends close the first and
+    # last stretches.
+    bounds = [0.0] + [(a + b) / 2 for a, b in zip(miles, miles[1:], strict=False)] + [total]
+
     out: list[CheckpointPosition] = []
-    prev = 0.0
-    for i, mile in enumerate(checkpoint_miles(total, interval_mi)):
+    for i, mile in enumerate(miles):
         fraction = mile / total if total else 0.0
         out.append(
             CheckpointPosition(
                 index=i,
                 mile=mile,
-                segment_mi=mile - prev,
+                covers_mi=bounds[i + 1] - bounds[i],
                 coord=point_at_distance(polyline, cumdist, mile),
                 eta=departure_ts + round(elapsed_at(timeline, fraction)),
             )
         )
-        prev = mile
     return out

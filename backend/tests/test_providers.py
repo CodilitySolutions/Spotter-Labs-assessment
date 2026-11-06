@@ -287,6 +287,7 @@ def test_open_meteo_sums_rain_and_showers_and_keeps_nulls(mock: respx.MockRouter
     item = _om_item(
         [0, 3600],
         wind_speed_10m=[10, None],
+        wind_direction_10m=[270, None],
         wind_gusts_10m=[20, None],
         rain=[0.1, None],
         showers=[0.2, 0.3],
@@ -297,6 +298,7 @@ def test_open_meteo_sums_rain_and_showers_and_keeps_nulls(mock: respx.MockRouter
     [series] = open_meteo.fetch_hourly([CHICAGO], 0, 3600)
 
     assert series[0].rain_in_hr == pytest.approx(0.3)
+    assert series[0].wind_dir_deg == 270  # wind from the west
     assert series[3600].wind_mph is None  # stays missing -> assessed as Unknown
     assert series[3600].rain_in_hr is None
 
@@ -344,6 +346,10 @@ def test_nws_converts_units_and_spreads_windows(mock: respx.MockRouter) -> None:
                 "uom": "wmoUnit:km_h-1",
                 "values": [{"validTime": "2026-11-06T06:00:00+00:00/PT2H", "value": 80.4672}],
             },
+            "windDirection": {
+                "uom": "wmoUnit:degree_(angle)",
+                "values": [{"validTime": "2026-11-06T06:00:00+00:00/PT2H", "value": 200}],
+            },
             "quantitativePrecipitation": {
                 "uom": "wmoUnit:mm",
                 # 15.24 mm over 3 h = 0.2 in/hr total precipitation
@@ -363,6 +369,7 @@ def test_nws_converts_units_and_spreads_windows(mock: respx.MockRouter) -> None:
     assert list(series) == [t0, t0 + 3600, t0 + 7200, t0 + 10800]
     hour = series[t0 + 3600]
     assert hour.wind_mph == pytest.approx(50, abs=0.01)  # 80.4672 km/h
+    assert hour.wind_dir_deg == 200
     assert hour.snow_in_hr == pytest.approx(1.0)
     assert hour.rain_in_hr == pytest.approx(0.1)  # 0.2 total - 1.0 snow / 10
     assert hour.source == "nws"

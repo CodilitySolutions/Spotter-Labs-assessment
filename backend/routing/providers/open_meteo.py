@@ -18,7 +18,7 @@ PROVIDER = "open-meteo"
 URL = "https://api.open-meteo.com/v1/forecast"
 # Coordinates per request. 100 points x 49 hours is ~225 KB and returns in ~1 s.
 CHUNK_SIZE = 100
-HOURLY_VARS = "wind_speed_10m,wind_gusts_10m,rain,showers,snowfall"
+HOURLY_VARS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m,rain,showers,snowfall"
 
 HourlyWeather = dict[int, Weather]
 """Weather keyed by the Unix timestamp (UTC) of the start of each hour."""
@@ -67,6 +67,7 @@ def _parse_location(item: dict[str, Any]) -> HourlyWeather:
         return values if values is not None else [None] * len(hourly["time"])
 
     wind, gust = column("wind_speed_10m"), column("wind_gusts_10m")
+    wind_dir = column("wind_direction_10m")
     rain, showers, snow = column("rain"), column("showers"), column("snowfall")
 
     return {
@@ -75,6 +76,7 @@ def _parse_location(item: dict[str, Any]) -> HourlyWeather:
             rain_in_hr=_liquid_rate(rain[i], showers[i]),
             snow_in_hr=snow[i],
             gust_mph=gust[i],
+            wind_dir_deg=wind_dir[i],
             source=PROVIDER,
         )
         for i, ts in enumerate(hourly["time"])

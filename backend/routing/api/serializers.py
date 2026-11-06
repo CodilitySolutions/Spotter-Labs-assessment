@@ -110,7 +110,7 @@ def _checkpoint_json(c: AssessedCheckpoint) -> dict[str, Any]:
     return {
         "index": p.index,
         "mile": round(p.mile, 1),
-        "segment_mi": round(p.segment_mi, 2),
+        "covers_mi": round(p.covers_mi, 2),
         "lon": round(p.coord[0], 5),
         "lat": round(p.coord[1], 5),
         "eta": p.eta,
@@ -144,6 +144,14 @@ def heatmap_json(heatmap: Heatmap) -> dict[str, Any]:
         "spacing_mi": round(heatmap.spacing_mi, 2),
         "points": [[round(lon, 4), round(lat, 4)] for lon, lat in heatmap.points],
         "scores": heatmap.scores,
+        "wind_levels": heatmap.wind_levels,
+        "rain_levels": heatmap.rain_levels,
+        "snow_levels": heatmap.snow_levels,
+        "load_raised": heatmap.load_raised,
+        "wind_mph": heatmap.wind_mph,
+        "wind_dir_deg": heatmap.wind_dir_deg,
+        "rain_in_hr": heatmap.rain_in_hr,
+        "snow_in_hr": heatmap.snow_in_hr,
     }
 
 

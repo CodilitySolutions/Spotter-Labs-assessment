@@ -70,7 +70,8 @@ def to_cell(point: LonLat) -> Cell:
 
 
 def _cell_key(cell: Cell, window: ForecastWindow) -> str:
-    return f"wx:{window.start}:{cell[0]:.1f}:{cell[1]:.1f}"
+    # "wx2": Weather gained wind_dir_deg; entries cached before that must not be read.
+    return f"wx2:{window.start}:{cell[0]:.1f}:{cell[1]:.1f}"
 
 
 def get_weather(

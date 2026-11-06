@@ -41,9 +41,13 @@ export function RouteCard({ route, letter, recommended, selected, onSelect }: Ro
           </p>
         </div>
         {summary.worst_level && (
-          <div className="shrink-0 text-right">
-            <p className="mb-1 text-[11px] tracking-wide text-muted uppercase">Worst</p>
+          <div
+            className="shrink-0 text-right"
+            title="The highest risk level anywhere on this route"
+          >
+            <p className="mb-1 text-[11px] tracking-wide text-muted uppercase">Peak risk</p>
             <RiskChip level={summary.worst_level} />
+            <span className="sr-only">: the highest risk level anywhere on this route</span>
           </div>
         )}
       </div>

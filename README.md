@@ -23,9 +23,10 @@ Open **http://localhost:5173**. The frontend proxies `/api` to the Django backen
 1. **Three route options.** TomTom truck routing (gross weight = cargo + 35,000 lb tractor-trailer) with 2 alternatives. Near-duplicate routes are dropped and replaced by detours forced left and right of the midpoint. If TomTom is down, OSRM supplies car routes, clearly flagged.
 2. **Checkpoints every 10, 25 or 50 miles**, plus the origin and destination. Each checkpoint's **ETA** is interpolated from the routing API's own per-maneuver travel times, so slow city stretches and fast highway stretches are reflected.
 3. **Weather at each checkpoint's ETA hour** from Open-Meteo (wind, rain + showers, snowfall in mph and in/hr). NWS is the US fallback. Missing data is **Unknown**, never treated as Low.
-4. **Risk per checkpoint** from the rules below, then **miles at each level per route**. Each checkpoint stands for the road since the previous one.
+4. **Risk per checkpoint** from the rules below, then **miles at each level per route**. Every mile is scored by its nearest checkpoint, so the weather at departure and arrival counts.
 5. **Recommendation** by the brief's ranking, with the deciding reason stated, for example *"Fewest severe-or-worse miles: 0 mi vs 42 mi on Route A."*
 6. **Map:** routes (A/B/C), checkpoints coloured by risk with detail popups, and a **0–48 h heatmap** over the corridor. Its slider includes an hour-by-hour risk timeline, the selected route's driving window, and a truck marker at the chosen time.
+7. **Why it's risky:** switch the heatmap between Overall, Wind, Rain and Snow; the status line names the cause ("No Travel: rain up to 1.84 in/hr"); hover or tap any shaded spot for its wind (speed and direction), rain and snow and whether the load rule applied; and wind arrows show where the wind blows, sized by speed.
 
 Search and planning work worldwide (tested with Chicago → Denver and Lahore → Karachi).
 
@@ -83,10 +84,10 @@ Full request and response shapes and error codes are in the [spec](docs/PROJECT_
 | | Empty cache | Cached | Size (gzipped) |
 |---|---|---|---|
 | Plan | ~7 s | ~0.7 s | 25 KB |
-| Heatmap | ~1.4 s | ~35 ms | 1.4 KB |
+| Heatmap (with per-condition data) | ~1.4 s | ~35 ms | ~32 KB |
 
 - **Why a plan takes ~7 s:** TomTom truck routing alone takes ~5 s on a long trip.
-- **Slider:** stays at 60 fps at normal drag speeds. It never makes a network request.
+- **Slider:** 60 fps with no slow frames at normal drag speed, 58–59 fps on a fast drag. It never makes a network request.
 - **Frontend bundle:** the main bundle is 94 KB gzipped. The map loads as a separate chunk.
 
 ## Development
@@ -94,7 +95,7 @@ Full request and response shapes and error codes are in the [spec](docs/PROJECT_
 | Command | What it does |
 |---|---|
 | `make up` / `make down` | Start or stop the stack |
-| `make test` | Backend (pytest, 190 tests) and frontend (Vitest, 17 tests) |
+| `make test` | Backend (pytest, 193 tests) and frontend (Vitest, 29 tests) |
 | `make lint` | Ruff, ESLint, `tsc` and Prettier checks |
 | `make format` | Auto-format both apps |
 | `make rebuild` | Rebuild after changing dependencies |

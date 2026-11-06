@@ -78,6 +78,7 @@ class Weather:
     snow_in_hr: float | None
     gust_mph: float | None = None
     source: str = "unknown"
+    wind_dir_deg: float | None = None  # direction the wind comes FROM (meteorological)
 
 
 @dataclass(frozen=True, slots=True)

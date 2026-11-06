@@ -2,7 +2,7 @@ import type { FeatureCollection, LineString, Point } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../../lib/maplibre';
 import { LngLatBounds, type ExpressionSpecification } from 'maplibre-gl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import MapGL, {
   Layer,
   Marker,
@@ -24,12 +24,18 @@ import {
   meanLatitude,
   radiusExpression,
   truckPosition,
-  worstScorePerHour,
+  levelAt,
+  nearestPoint,
+  summarizeHours,
+  windArrowGeoJSON,
+  type HeatmapView,
 } from '../../lib/heatmap';
+import { WIND_ARROW_ICON, windArrowImage } from '../../lib/windArrow';
 import { formatTime } from '../../lib/format';
 import { RISK_COLOR, RISK_SCORE_COLOR_EXPRESSION } from '../../lib/risk';
 import { ROUTE_LETTERS } from '../../lib/routes';
 import type { LonLat, Plan } from '../../types';
+import { AreaConditionsCard } from './AreaConditionsCard';
 import { CheckpointPopup } from './CheckpointPopup';
 import { ForecastSlider } from './ForecastSlider';
 import { MapLegend } from './MapLegend';
@@ -73,6 +79,12 @@ export function TripMap({
   const heatmap = heatmapQuery.data ?? null;
   const [hour, setHour] = useState(0);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [view, setView] = useState<HeatmapView>('overall');
+  const [showArrows, setShowArrows] = useState(true);
+  // Heatmap grid point under the pointer (or last tapped), for the conditions card.
+  const [areaPoint, setAreaPoint] = useState<number | null>(null);
+  // A card opened by click/tap stays put; one opened by hovering follows the pointer.
+  const [areaPinned, setAreaPinned] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [syncedHeatmap, setSyncedHeatmap] = useState<string | null>(null);
 
@@ -91,12 +103,19 @@ export function TripMap({
   }
 
   const heatmapData = useMemo(() => (heatmap ? heatmapGeoJSON(heatmap) : null), [heatmap]);
-  const worstByHour = useMemo(() => (heatmap ? worstScorePerHour(heatmap) : null), [heatmap]);
+  const summaries = useMemo(
+    () => (heatmap ? summarizeHours(heatmap, view) : null),
+    [heatmap, view],
+  );
+  const arrowData = useMemo(() => (heatmap ? windArrowGeoJSON(heatmap) : null), [heatmap]);
   const heatmapRadius = useMemo(
     () => (heatmap ? radiusExpression(heatmap.spacing_mi, meanLatitude(heatmap.points)) : null),
     [heatmap],
   );
-  const sliderTime = heatmap ? heatmap.start_hour + hour * 3600 : null;
+  // The slider shows `hour` immediately; the map layers follow `mapHour`, which React may hold
+  // back during a fast drag so the map skips in-between hours instead of falling behind.
+  const mapHour = useDeferredValue(hour);
+  const sliderTime = heatmap ? heatmap.start_hour + mapHour * 3600 : null;
   // Mid-hour, so the marker sits where the truck is during the hour the heatmap shows.
   const truck =
     selectedRoute && sliderTime !== null ? truckPosition(selectedRoute, sliderTime + 1800) : null;
@@ -169,7 +188,29 @@ export function TripMap({
       onSelectRoute(String(feature.properties.id));
     } else {
       onFocusCheckpoint(null);
+      // Click/tap: explain any spot in the corridor, calm or not, and keep the card open
+      // until the next click. Clicking outside the corridor closes it.
+      const area = areaAt(event, false);
+      setAreaPoint(area);
+      setAreaPinned(area !== null);
     }
+  }
+
+  /**
+   * The forecast grid point under the pointer, within one grid cell. With `riskyOnly`, only
+   * points shaded in the current view (Moderate or worse) count, so hovering calm areas shows
+   * nothing.
+   */
+  function areaAt(event: MapLayerMouseEvent, riskyOnly: boolean): number | null {
+    if (!heatmap || !showHeatmap) return null;
+    const i = nearestPoint(
+      heatmap,
+      [event.lngLat.lng, event.lngLat.lat],
+      heatmap.spacing_mi * 0.75,
+    );
+    if (i === null) return null;
+    if (riskyOnly && (levelAt(heatmap, view, i, mapHour) ?? 0) < 1) return null;
+    return i;
   }
 
   function handleMouseMove(event: MapLayerMouseEvent) {
@@ -177,6 +218,9 @@ export function TripMap({
     setPointer(Boolean(feature));
     const routeId = feature?.layer.id === 'route-hit' ? String(feature.properties.id) : null;
     if (routeId !== hoveredRoute) setHoveredRoute(routeId);
+    if (areaPinned) return; // a clicked card stays until the next click
+    const area = feature ? null : areaAt(event, true);
+    if (area !== areaPoint) setAreaPoint(area);
   }
 
   return (
@@ -194,12 +238,16 @@ export function TripMap({
           onLoad={(event) => {
             const firstLabel = event.target.getStyle().layers.find((l) => l.type === 'symbol');
             setLabelLayerId(firstLabel?.id);
+            if (!event.target.hasImage(WIND_ARROW_ICON)) {
+              event.target.addImage(WIND_ARROW_ICON, windArrowImage(2), { pixelRatio: 2 });
+            }
           }}
           onClick={handleClick}
           onMouseMove={handleMouseMove}
           onMouseLeave={() => {
             setPointer(false);
             setHoveredRoute(null);
+            if (!areaPinned) setAreaPoint(null);
           }}
           cursor={pointer ? 'pointer' : undefined}
           style={{ position: 'absolute', inset: 0 }}
@@ -222,15 +270,51 @@ export function TripMap({
                   beforeId="route-casing"
                   layout={{ visibility: showHeatmap ? 'visible' : 'none' }}
                   paint={{
-                    'heatmap-weight': levelWeightExpression(hour, score),
+                    'heatmap-weight': levelWeightExpression(mapHour, score, view),
                     'heatmap-radius': heatmapRadius,
                     'heatmap-intensity': HEATMAP_INTENSITY,
                     'heatmap-color': levelColorExpression(RISK_COLOR[level]),
-                    // Fade out when zoomed in close, where checkpoints say more than a regional field.
-                    'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 1, 9, 0],
+                    // Visible at trip and regional zoom (short trips frame at ~9); fade out at street level.
+                    'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 10, 1, 12, 0],
                   }}
                 />
               ))}
+            </Source>
+          )}
+
+          {arrowData && plan && (
+            <Source id="wind-arrows" type="geojson" data={arrowData}>
+              <Layer
+                id="wind-arrows"
+                type="symbol"
+                beforeId="route-casing"
+                layout={{
+                  visibility: showArrows ? 'visible' : 'none',
+                  'icon-image': WIND_ARROW_ICON,
+                  'icon-rotate': ['coalesce', ['get', `d${mapHour}`], 0],
+                  'icon-rotation-alignment': 'map',
+                  'icon-allow-overlap': true,
+                  'icon-ignore-placement': true,
+                  // Size grows with speed: light air is small, gales are large.
+                  'icon-size': [
+                    'interpolate',
+                    ['linear'],
+                    ['coalesce', ['get', `v${mapHour}`], 0],
+                    0,
+                    0.6,
+                    15,
+                    0.85,
+                    35,
+                    1.2,
+                    55,
+                    1.55,
+                  ],
+                }}
+                paint={{
+                  // Hide where this hour has no wind data.
+                  'icon-opacity': ['case', ['has', `v${mapHour}`], 0.9, 0],
+                }}
+              />
             </Source>
           )}
 
@@ -340,6 +424,25 @@ export function TripMap({
             </Marker>
           )}
 
+          {heatmap && areaPoint !== null && !focused && showHeatmap && (
+            <Popup
+              longitude={heatmap.points[areaPoint]![0]}
+              latitude={heatmap.points[areaPoint]![1]}
+              offset={12}
+              closeButton={false}
+              closeOnClick={false}
+              maxWidth="300px"
+              className="pointer-events-none"
+            >
+              <AreaConditionsCard
+                heatmap={heatmap}
+                index={areaPoint}
+                hour={mapHour}
+                loadLb={plan?.load_weight_lb ?? 0}
+              />
+            </Popup>
+          )}
+
           {focused && selectedRoute && (
             <Popup
               longitude={focused.lon}
@@ -370,7 +473,13 @@ export function TripMap({
           </div>
         )}
 
-        {plan && <MapLegend showHeatmap={showHeatmap && heatmap !== null} />}
+        {plan && (
+          <MapLegend
+            showHeatmap={showHeatmap && heatmap !== null}
+            view={view}
+            showArrows={showArrows && heatmap !== null}
+          />
+        )}
 
         {!plan && !loading && (
           <div className="pointer-events-none absolute inset-x-0 bottom-6 hidden justify-center px-4 sm:flex">
@@ -391,7 +500,12 @@ export function TripMap({
               hours={heatmap?.hours ?? 49}
               hour={hour}
               onHourChange={setHour}
-              worstByHour={worstByHour}
+              summaries={summaries}
+              view={view}
+              onViewChange={setView}
+              arrows={showArrows}
+              onArrowsChange={setShowArrows}
+              loadLb={plan.load_weight_lb}
               routeName={selectedRoute?.name ?? null}
               truckMile={truck?.mile ?? null}
               tripStart={selectedRoute?.departure_time ?? null}

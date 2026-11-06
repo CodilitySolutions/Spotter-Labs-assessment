@@ -82,18 +82,19 @@ def test_sample_checkpoints_positions_etas_and_segments() -> None:
 
     assert [c.index for c in cps] == [0, 1, 2, 3, 4]
     assert [c.mile for c in cps] == pytest.approx([0, 25, 50, 75, 100], abs=0.01)
-    assert [c.segment_mi for c in cps] == pytest.approx([0, 25, 25, 25, 25], abs=0.01)
+    # Nearest-checkpoint coverage: the ends cover half an interval, the middle a full one.
+    assert [c.covers_mi for c in cps] == pytest.approx([12.5, 25, 25, 25, 12.5], abs=0.01)
     assert [c.eta - DEPART for c in cps] == pytest.approx([0, 1800, 3600, 5400, 7200], abs=2)
     assert haversine_mi(line[0], cps[2].coord) == pytest.approx(50, abs=0.01)
     assert cps[0].coord == line[0]
     assert cps[-1].coord == line[-1]
 
 
-def test_segments_add_up_to_route_length() -> None:
+def test_coverage_adds_up_to_route_length() -> None:
     line = north_line(137.4)
     cps = sample_checkpoints(line, uniform_timeline(137.4, 9000), interval_mi=10, departure_ts=0)
 
-    assert sum(c.segment_mi for c in cps) == pytest.approx(137.4, abs=0.01)
+    assert sum(c.covers_mi for c in cps) == pytest.approx(137.4, abs=0.01)
 
 
 def test_etas_use_route_fraction_when_api_length_differs() -> None:
@@ -106,3 +107,12 @@ def test_etas_use_route_fraction_when_api_length_differs() -> None:
 
     assert cps[1].eta - DEPART == pytest.approx(3672, abs=2)
     assert cps[-1].eta - DEPART == 7344
+
+
+def test_coverage_with_a_short_final_stretch() -> None:
+    # Checkpoints at 0, 25, 50, 60: each mile belongs to its nearest checkpoint.
+    line = north_line(60)
+    cps = sample_checkpoints(line, uniform_timeline(60, 3600), interval_mi=25, departure_ts=0)
+
+    assert [c.mile for c in cps] == pytest.approx([0, 25, 50, 60], abs=0.01)
+    assert [c.covers_mi for c in cps] == pytest.approx([12.5, 25, 17.5, 5], abs=0.01)

@@ -1,4 +1,5 @@
-import { HEATMAP_FILL_ALPHA } from '../../lib/heatmap';
+import { Navigation2 } from 'lucide-react';
+import { HEATMAP_FILL_ALPHA, HEATMAP_VIEWS, type HeatmapView } from '../../lib/heatmap';
 import { RISK_COLOR, RISK_LABEL } from '../../lib/risk';
 import type { RiskOrUnknown } from '../../types';
 import { RiskMark } from '../RiskChip';
@@ -6,7 +7,14 @@ import { RiskMark } from '../RiskChip';
 const LEVELS: RiskOrUnknown[] = ['low', 'moderate', 'high', 'severe', 'no_travel'];
 const AREA_LEVELS: RiskOrUnknown[] = ['moderate', 'high', 'severe', 'no_travel'];
 
-export function MapLegend({ showHeatmap }: { showHeatmap: boolean }) {
+interface MapLegendProps {
+  showHeatmap: boolean;
+  view: HeatmapView;
+  showArrows: boolean;
+}
+
+export function MapLegend({ showHeatmap, view, showArrows }: MapLegendProps) {
+  const viewLabel = HEATMAP_VIEWS.find((v) => v.value === view)?.label ?? 'Overall';
   return (
     <div className="absolute top-4 left-4 hidden rounded-xl border border-line bg-surface/95 p-3 text-xs text-ink-2 shadow-sm sm:block">
       <div className="space-y-1.5">
@@ -25,7 +33,7 @@ export function MapLegend({ showHeatmap }: { showHeatmap: boolean }) {
       {showHeatmap && (
         <>
           <p className="mt-3 mb-1.5 text-[11px] tracking-wide text-muted uppercase">
-            Forecast risk area
+            Forecast risk area · {viewLabel}
           </p>
           <ul className="flex gap-1" aria-label="Forecast risk area colors">
             {AREA_LEVELS.map((level) => (
@@ -40,6 +48,12 @@ export function MapLegend({ showHeatmap }: { showHeatmap: boolean }) {
             ))}
           </ul>
         </>
+      )}
+      {showArrows && (
+        <p className="mt-3 flex items-center gap-1.5">
+          <Navigation2 aria-hidden className="size-3.5 rotate-45 fill-ink-2 text-ink-2" />
+          Wind blows this way · size = speed
+        </p>
       )}
     </div>
   );

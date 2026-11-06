@@ -7,7 +7,7 @@ from routing.domain.models import Place, Weather
 from routing.providers.base import ProviderError
 from routing.services import plan_service, weather_service
 
-from .factories import NOW, body, iso, post
+from .factories import NOW, body, calm, iso, post
 
 
 def test_plan_recommends_the_safer_route(stubbed) -> None:
@@ -18,8 +18,8 @@ def test_plan_recommends_the_safer_route(stubbed) -> None:
     assert [r["id"] for r in plan["routes"]] == ["r1", "r2", "r3"]
     a, b, c = plan["routes"]
 
-    # Route A: 50 mph wind on its last two 25-mi segments = 50 severe miles.
-    assert a["summary"]["severe_miles"] == pytest.approx(50, abs=1)
+    # Route A: 50 mph wind at its mile-75 and mile-100 checkpoints, which cover 25 + 12.5 mi.
+    assert a["summary"]["severe_miles"] == pytest.approx(37.5, abs=1)
     assert a["summary"]["worst_level"] == "severe"
     assert b["summary"]["severe_miles"] == 0
     # B and C are equally safe; B is faster, so B wins and A ranks last.
@@ -35,7 +35,7 @@ def test_load_rules_are_applied(stubbed) -> None:
     plan = post(body(load_weight_lb=42_000)).json()
     a = plan["routes"][0]
 
-    assert a["summary"]["miles_by_level"]["no_travel"] == pytest.approx(50, abs=1)
+    assert a["summary"]["miles_by_level"]["no_travel"] == pytest.approx(37.5, abs=1)
     windy = [cp for cp in a["checkpoints"] if cp["risk"] == "no_travel"]
     assert windy[0]["levels"]["load_override"] == "no_travel"
     assert windy[0]["reason"] == "No Travel: Wind 50 mph with load 42,000 lb > 30,000 lb"
@@ -49,7 +49,7 @@ def test_checkpoint_shape_and_etas(stubbed) -> None:
     assert cps[0]["eta"] == NOW
     assert cps[-1]["eta"] == NOW + 2 * 3600
     assert set(cps[0]) == {
-        "index", "mile", "segment_mi", "lon", "lat", "eta",
+        "index", "mile", "covers_mi", "lon", "lat", "eta",
         "weather", "levels", "risk", "risk_score", "reason",
     }  # fmt: skip
     assert cps[0]["weather"]["source"] == "open-meteo"
@@ -182,3 +182,25 @@ def test_geocode_bias_needs_both_coordinates() -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_request"
+
+
+def test_weather_at_departure_counts_against_the_route(stubbed, monkeypatch) -> None:
+    """Regression: a route starting in severe weather must not be summarised as all Low."""
+
+    def storm_at_origin(points, start, end):
+        out = []
+        for _lon, lat in points:
+            severe = lat < 35.05  # only the departure area
+            wx = Weather(wind_mph=50, rain_in_hr=0, snow_in_hr=0) if severe else calm()
+            out.append({start + h * 3600: wx for h in range(49)})
+        return out
+
+    monkeypatch.setattr(weather_service.open_meteo, "fetch_hourly", storm_at_origin)
+
+    plan = post(body(load_weight_lb=20_000)).json()
+
+    for route in plan["routes"]:
+        assert route["checkpoints"][0]["risk"] == "severe"
+        assert route["summary"]["worst_level"] == "severe"
+        # The origin checkpoint covers the first half-interval (12.5 of 25 miles).
+        assert route["summary"]["severe_miles"] == pytest.approx(12.5, abs=0.5)

@@ -48,19 +48,22 @@ class RouteSummary:
 
 
 def summarize(segments: Iterable[tuple[float, RiskLevel | None]]) -> RouteSummary:
-    """Summarize a route from ``(segment_miles, level)`` pairs; ``None`` means Unknown."""
+    """Summarize a route from ``(covered_miles, level)`` pairs, one per checkpoint; ``None``
+    means Unknown. A checkpoint covering no road (only possible on degenerate input) can't set
+    the worst level.
+    """
     miles = dict.fromkeys(LEVEL_KEYS, 0.0)
     weighted = known = 0.0
     worst: RiskLevel | None = None
 
-    for segment_mi, level in segments:
+    for covers_mi, level in segments:
         if level is None:
-            miles["unknown"] += segment_mi
+            miles["unknown"] += covers_mi
             continue
-        miles[level.label] += segment_mi
-        weighted += int(level) * segment_mi
-        known += segment_mi
-        if segment_mi > 0 and (worst is None or level > worst):
+        miles[level.label] += covers_mi
+        weighted += int(level) * covers_mi
+        known += covers_mi
+        if covers_mi > 0 and (worst is None or level > worst):
             worst = level
 
     return RouteSummary(

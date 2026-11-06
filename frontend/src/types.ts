@@ -30,7 +30,8 @@ export interface CheckpointWeather {
 export interface Checkpoint {
   index: number;
   mile: number;
-  segment_mi: number;
+  /** Miles of road scored by this checkpoint (it covers halfway to each neighbour). */
+  covers_mi: number;
   lon: number;
   lat: number;
   eta: number;
@@ -90,6 +91,17 @@ export interface Heatmap {
   step_s: number;
   spacing_mi: number;
   points: LonLat[];
-  /** scores[i][h]: risk score 0-4 at points[i] in hour h, or null when unknown. */
+  /** All matrices are [point][hour]; null = unknown. scores = overall risk score 0-4. */
   scores: (number | null)[][];
+  /** Level each condition produces on its own. Wind includes the load rules. */
+  wind_levels: (number | null)[][];
+  rain_levels: (number | null)[][];
+  snow_levels: (number | null)[][];
+  /** 1 where the load rules raised the wind level. */
+  load_raised: (number | null)[][];
+  wind_mph: (number | null)[][];
+  /** Direction the wind comes FROM, degrees clockwise from north. */
+  wind_dir_deg: (number | null)[][];
+  rain_in_hr: (number | null)[][];
+  snow_in_hr: (number | null)[][];
 }

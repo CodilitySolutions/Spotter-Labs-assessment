@@ -54,8 +54,8 @@ def test_all_unknown_route_has_no_average() -> None:
     assert s.worst_level is None
 
 
-def test_origin_checkpoint_does_not_set_worst_level() -> None:
-    # The origin represents 0 miles, so its level covers no road.
+def test_checkpoint_covering_no_road_does_not_set_worst_level() -> None:
+    # Only possible on degenerate input; a level that applies to no miles isn't "worst".
     s = summarize([(0, S), (25, L)])
 
     assert s.worst_level == L

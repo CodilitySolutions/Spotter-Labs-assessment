@@ -68,10 +68,12 @@ If weather is missing for a checkpoint after all fallbacks, its level is **Unkno
 ## 5. Route metrics and recommendation
 
 ### 5.1 Miles at each risk level
-Each checkpoint **k > 0** stands for the stretch of road from checkpoint k‑1 to checkpoint k, and its level applies to all of those miles. The origin checkpoint at mile 0 stands for zero miles. This rule is simple and makes the per-level miles add up exactly to the route distance.
+Every mile is scored by its **nearest checkpoint**. A checkpoint covers the road from halfway back to the previous checkpoint to halfway on to the next (`covers_mi`). The origin covers the first half-interval and the destination the last, so the weather **at departure and arrival counts**. The per-level miles still add up exactly to the route distance.
+
+*Why not "each checkpoint covers the road since the previous one"?* That was the first version. It gives the origin zero miles, so a truck departing into heavy rain was summarised as all Low (seen on a real New York → New Jersey plan, where the origin was High at 0.40 in/hr and every route card showed Low as its highest risk). The nearest-checkpoint rule fixes that without double-counting any checkpoint.
 
 ### 5.2 Average risk
-Average risk is weighted by distance: `Σ(score_k × segment_miles_k) / total_miles`.
+Average risk is weighted by distance: `Σ(score_k × covers_mi_k) / known_miles` (unknown miles are left out).
 
 ### 5.3 Ranking (lowest wins), compared left to right
 
@@ -106,6 +108,7 @@ The explanation names the first comparison in the ranking that decided the winne
 - **Area:** a regular grid covering every place within **40 miles** of any of the routes. Its spacing is tuned so the grid has about **300 points** (±25%), whatever the trip length.
 - **Time:** forecast hours **0–48 from now** (hour 0 = the current hour). The departure time and the checkpoint ETAs are marked on the slider.
 - **Value:** the checkpoint risk score from §4, with the trip's load weight applied, for each point and each hour. `null` where weather is unknown.
+- **Why an area is risky:** each point and hour also carries the level from wind, rain and snow on their own (wind including the load rules) and the raw values, all from the same `assess()` call as the checkpoints. The map can show one condition at a time, name the cause ("Severe: wind up to 48 mph with 42,000 lb load"), explain any spot on hover or tap, and draw wind-direction arrows.
 - **Weather source:** Open-Meteo only. NWS needs a request per point, too slow for ~300 points, so if Open-Meteo is down the heatmap returns `502` while the plan itself still works.
 - **Performance:** the whole 49-hour grid is fetched once. Moving the slider only changes what is drawn and makes **no network requests**.
 
@@ -152,7 +155,7 @@ The explanation names the first comparison in the ranking that decided the winne
       },
       "checkpoints": [
         {
-          "index": 0, "mile": 0, "segment_mi": 0, "lat": 41.88, "lon": -87.63, "eta": 1762437600,
+          "index": 0, "mile": 0, "covers_mi": 12.5, "lat": 41.88, "lon": -87.63, "eta": 1762437600,
           "weather": { "wind_mph": 12, "gust_mph": 20, "rain_in_hr": 0.0, "snow_in_hr": 0.0, "source": "open-meteo" },
           "levels": { "wind": "low", "rain": "low", "snow": "low", "load_override": null },
           "risk": "low", "risk_score": 0, "reason": "All conditions low"
@@ -171,7 +174,12 @@ The explanation names the first comparison in the ranking that decided the winne
   "hours": 49,
   "step_s": 3600,
   "points": [[lon, lat], ...],
-  "scores": [[0,0,1,...49 values], ...]   // 0-4, or null when unknown
+  "spacing_mi": 7.1,
+  "scores": [[0,0,1,...49 values], ...],  // overall level 0-4, or null when unknown
+  "wind_levels": [[...]], "rain_levels": [[...]], "snow_levels": [[...]],  // each condition alone; wind includes load rules
+  "load_raised": [[0,1,...]],             // 1 where the load rules raised the wind level
+  "wind_mph": [[...]], "wind_dir_deg": [[...]],  // direction the wind comes FROM
+  "rain_in_hr": [[...]], "snow_in_hr": [[...]]
 }
 ```
 Scores are stored as numbers rather than level names to keep the response small. It is served separately so the routes can appear on the map before the heatmap finishes loading.
