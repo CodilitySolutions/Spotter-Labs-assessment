@@ -1,0 +1,57 @@
+# Render Blueprint: deploys the whole app (free tier) and redeploys it on every push to main.
+# One-time setup: Render dashboard -> New -> Blueprint -> pick this repo -> paste TOMTOM_API_KEY.
+# See README "Hosting" for details.
+
+services:
+  # --- Backend: Django API (Docker, prod stage = last stage of backend/Dockerfile) -----------
+  - type: web
+    name: spotter-truck-routing-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: TOMTOM_API_KEY
+        sync: false # asked for once, in the dashboard, when the Blueprint is created
+      - key: NWS_USER_AGENT
+        value: spotter-truck-routing (github.com/CodilitySolutions/Spotter-Labs-assessment)
+
+  # --- Frontend: static React build served from Render's CDN (never sleeps) -----------------
+  - type: web
+    name: spotter-truck-routing
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+    routes:
+      # Order matters: the API proxy first, then the single-page-app fallback.
+      # If Render gave the backend a different URL (name already taken), update this line.
+      - type: rewrite
+        source: /api/*
+        destination: https://spotter-truck-routing-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # Vite's hashed build assets never change, so browsers can cache them for a year.
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable

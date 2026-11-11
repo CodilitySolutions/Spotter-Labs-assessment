@@ -40,4 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --chown=app:app . .
 USER app
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60", "--access-logfile", "-"]
+# One process, several threads: without Redis the cache lives in process memory, and a plan
+# must be found by the heatmap request that follows it. Hosts (e.g. Render) set $PORT.
+ENV WEB_CONCURRENCY=1 GUNICORN_THREADS=8
+CMD ["sh", "-c", "exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY} --threads ${GUNICORN_THREADS} --timeout 60 --access-logfile -"]

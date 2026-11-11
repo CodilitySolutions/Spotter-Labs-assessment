@@ -1,6 +1,5 @@
 import logging
 
-from django.core.cache import cache
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -9,6 +8,7 @@ from ..providers import photon, tomtom
 from ..providers.base import ProviderError
 from ..services import heatmap_service, plan_service
 from ..services.errors import UpstreamUnavailableError
+from .health import health_status
 from .serializers import (
     GeocodeQuerySerializer,
     PlanRequestSerializer,
@@ -22,13 +22,9 @@ log = logging.getLogger(__name__)
 
 @api_view(["GET"])
 def health(request: Request) -> Response:
-    """Liveness check for Docker and the frontend; also reports whether the cache is reachable."""
-    try:
-        cache.set("health:ping", "ok", timeout=5)
-        cache_ok = cache.get("health:ping") == "ok"
-    except Exception:
-        cache_ok = False
-    return Response({"status": "ok", "cache": "ok" if cache_ok else "unavailable"})
+    """Liveness check. Normally answered earlier by HealthCheckMiddleware; kept as a view so
+    the route is visible in the URL config."""
+    return Response(health_status())
 
 
 @api_view(["GET"])

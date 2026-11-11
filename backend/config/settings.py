@@ -19,6 +19,14 @@ env = environ.Env(
 DEBUG = env("DEBUG")
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-key" if DEBUG else environ.Env.NOTSET)
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+# Render sets this to the service's public hostname (e.g. my-api.onrender.com).
+if render_host := env.str("RENDER_EXTERNAL_HOSTNAME", default=""):
+    ALLOWED_HOSTS.append(render_host)
+
+if not DEBUG:
+    # Behind a TLS-terminating proxy (Render), trust its scheme header.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_CONTENT_TYPE_NOSNIFF = True
 
 # The API is stateless (no users, sessions or admin), so only the apps it needs are installed.
 INSTALLED_APPS = [
@@ -28,6 +36,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First: answers /api/health before host validation (see routing/api/health.py).
+    "routing.api.health.HealthCheckMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Plan responses are ~100 KB of JSON; gzip cuts them by roughly 4x.
     "django.middleware.gzip.GZipMiddleware",

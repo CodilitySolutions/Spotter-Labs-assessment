@@ -10,6 +10,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Wake the API as soon as the page opens. On free hosting the backend sleeps when idle and
+// takes up to a minute to start; this gets it going while the user fills in the trip form.
+fetch('/api/health').catch(() => {
+  /* best effort: the form works either way */
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

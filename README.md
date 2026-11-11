@@ -90,6 +90,30 @@ Full request and response shapes and error codes are in the [spec](docs/PROJECT_
 - **Slider:** 60 fps with no slow frames at normal drag speed, 58–59 fps on a fast drag. It never makes a network request.
 - **Frontend bundle:** the main bundle is 94 KB gzipped. The map loads as a separate chunk.
 
+## Hosting (free, auto-deploys on every push)
+
+Everything is defined in [`render.yaml`](render.yaml), a Render Blueprint:
+
+| Service | What it is | Free tier |
+|---|---|---|
+| `spotter-truck-routing` | The React build as a static site on Render's CDN. `/api/*` is proxied to the backend | Never sleeps |
+| `spotter-truck-routing-api` | The Django API (`backend/Dockerfile` prod stage, gunicorn: 1 process × 8 threads) | Sleeps after 15 min idle and wakes in about a minute. The page pings `/api/health` on load so it's warming up while you fill in the form |
+
+**One-time setup (about 5 minutes):**
+1. Go to [dashboard.render.com](https://dashboard.render.com), sign in with GitHub, and click **New → Blueprint**.
+2. Pick this repository. Render reads `render.yaml` and lists both services.
+3. When asked for **`TOMTOM_API_KEY`**, paste your key, then click **Apply**.
+4. When both services show **Live**, open the static site's URL (`https://spotter-truck-routing.onrender.com`).
+
+From then on, every push to `main` redeploys whichever app changed. Backend changes rebuild only the API, and frontend changes only the site. GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)) runs lint, type checks and all tests on every push.
+
+**If something doesn't work:**
+- **Render can't see the repo:** it belongs to the `CodilitySolutions` organisation, so an org admin may need to approve Render's GitHub app.
+- **The API URL differs:** if the backend didn't get `https://spotter-truck-routing-api.onrender.com` (because the name was taken), copy its real URL into the `/api/*` rewrite in `render.yaml` and push.
+- **The first plan is slow:** that's the free backend waking up. Open `/api/health` on the backend once before recording a demo.
+
+No database is needed. Plans, routes and weather are cached in the API's memory for up to an hour, which is why it runs as a single process.
+
 ## Development
 
 | Command | What it does |
