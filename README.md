@@ -109,7 +109,7 @@ From then on, every push to `main` redeploys whichever app changed. Backend chan
 
 **If something doesn't work:**
 - **Render can't see the repo:** it belongs to the `CodilitySolutions` organisation, so an org admin may need to approve Render's GitHub app.
-- **The API URL differs:** if the backend didn't get `https://spotter-truck-routing-api.onrender.com` (because the name was taken), copy its real URL into the `/api/*` rewrite in `render.yaml` and push.
+- **The API URL differs:** Render adds a suffix when a name is taken. The live backend is `https://spotter-truck-routing-api-um02.onrender.com`; if you recreate it, copy its new URL into the `/api/*` rewrite in `render.yaml` (and in the static site's Redirects/Rewrites tab if it was set up by hand).
 - **The first plan is slow:** that's the free backend waking up. Open `/api/health` on the backend once before recording a demo.
 
 No database is needed. Plans, routes and weather are cached in the API's memory for up to an hour, which is why it runs as a single process.

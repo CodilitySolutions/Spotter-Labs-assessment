@@ -46,7 +46,7 @@ services:
       # If Render gave the backend a different URL (name already taken), update this line.
       - type: rewrite
         source: /api/*
-        destination: https://spotter-truck-routing-api.onrender.com/api/*
+        destination: https://spotter-truck-routing-api-um02.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html
